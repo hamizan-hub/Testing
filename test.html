@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Gamified Data Science Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f1220; --panel: #171a2b; --soft: #222643; --text: #eef1ff; --muted: #a9b2d3;
+      --accent: #7c9cff; --accent2:#7cffc4; --warn:#ffcc66; --danger:#ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+           background: radial-gradient(80vw 80vh at 20% 10%, #121735, #0b0e1c), var(--bg); color: var(--text); }
+    .wrap { max-width: 1100px; margin: 32px auto; padding: 0 16px; }
+    .grid { display: grid; gap: 16px; }
+    .top { grid-template-columns: 1fr 1fr; align-items: start; }
+    .card { background: linear-gradient(180deg, #1a1f3b 0%, #121735 100%); border: 1px solid #2b315a;
+            border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    h2 { font-size: 16px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pill { background: #1e2446; border: 1px solid #37407a; border-radius: 999px; padding: 6px 10px; font-size: 13px; }
+    .pill strong { color: var(--accent); }
+    .xpbar { height: 12px; background: #1b1f38; border: 1px solid #2b315a; border-radius: 999px; overflow: hidden; }
+    .xpfill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 0%; transition: width .4s ease; }
+    .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0 0; }
+    .kpi .card { padding: 12px; text-align: center; }
+    .kpi h3 { margin: 0; font-size: 14px; color: var(--muted); }
+    .kpi div.value { font-size: 22px; font-weight: 700; margin-top: 4px; color: var(--accent2); }
+    .btn { cursor: pointer; background: linear-gradient(180deg, #2a3180, #202868);
+           border: 1px solid #3d47a3; color: white; padding: 10px 12px; border-radius: 10px; font-weight: 600; }
+    .btn.secondary { background: #1c2246; border-color: #2a3176; color: #c9d3ff; }
+    .btn:active { transform: translateY(1px); }
+    .list { display: grid; gap: 10px; }
+    .quest, .ach { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+                   background: #121735; border: 1px solid #293164; border-radius: 12px; padding: 10px 12px; }
+    .quest small, .ach small { color: var(--muted); }
+    .ach.locked { opacity: .6; }
+    .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #3a4278; background: #1a1f3b; color: #cfd6ff; }
+    .leader { width: 100%; border-collapse: collapse; }
+    .leader th, .leader td { border-bottom: 1px solid #2b315a; padding: 8px; text-align: left; }
+    .notice { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    canvas { background: #0f1220; border-radius: 12px; border: 1px solid #2b315a; }
+    @media (max-width: 900px){ .top { grid-template-columns: 1fr; } .kpi { grid-template-columns: repeat(2,1fr); } }
+  </style>
+</head>
+<body>
+  <div class="wrap grid">
+    <!-- HEADER / PROFILE -->
+    <div class="card">
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <h1>Data Science Quest</h1>
+          <div class="row">
+            <span class="pill">Level <strong id="level">1</strong></span>
+            <span class="pill">XP <strong id="xp">0</strong>/100</span>
+            <span class="pill">Points <strong id="points">0</strong></span>
+            <span class="pill">Streak 🔥 <strong id="streak">0</strong> days</span>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn" id="btn-complete-task">Complete “Create a Plot”</button>
+          <button class="btn secondary" id="btn-reset">Reset Progress</button>
+        </div>
+      </div>
+      <div class="xpbar" style="margin-top:12px;"><div class="xpfill" id="xpfill"></div></div>
+      <div class="notice">Tip: progress is stored in <code>localStorage</code>. Completing actions awards points & XP. Level up every 100 XP.</div>
+    </div>
+
+    <!-- KPI STRIP -->
+    <div class="kpi">
+      <div class="card"><h3>Datasets Loaded</h3><div class="value" id="kpi-datasets">0</div></div>
+      <div class="card"><h3>Models Trained</h3><div class="value" id="kpi-models">0</div></div>
+      <div class="card"><h3>Charts Created</h3><div class="value" id="kpi-charts">0</div></div>
+      <div class="card"><h3>Quests Done</h3><div class="value" id="kpi-quests">0</div></div>
+    </div>
+
+    <div class="grid top">
+      <!-- CHART / PLAY AREA -->
+      <div class="card">
+        <h2>Model Accuracy Over Time</h2>
+        <canvas id="accChart" height="140"></canvas>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn" id="btn-add-epoch">Add Epoch (+2 XP)</button>
+          <button class="btn secondary" id="btn-load-dataset">Load Dataset (+5 pts)</button>
+          <button class="btn secondary" id="btn-train-model">Train Model (+10 pts)</button>
+        </div>
+        <div class="notice">First chart interaction each day grants the “Explorer” achievement.</div>
+      </div>
+
+      <!-- QUESTS / ACHIEVEMENTS -->
+      <div class="grid">
+        <div class="card">
+          <h2>Daily Quests</h2>
+          <div class="list" id="quest-list"></div>
+        </div>
+        <div class="card">
+          <h2>Achievements</h2>
+          <div class="list" id="ach-list"></div>
+        </div>
+        <div class="card">
+          <h2>Leaderboard (Mock)</h2>
+          <table class="leader">
+            <thead><tr><th>Rank</th><th>Player</th><th>Points</th></tr></thead>
+            <tbody id="leader-body">
+              <tr><td>1</td><td>Aria</td><td>420</td></tr>
+              <tr><td>2</td><td>Ravi</td><td>380</td></tr>
+              <tr><td>3</td><td>You</td><td id="me-points">0</td></tr>
+            </tbody>
+          </table>
+          <div class="notice">Replace with a real class/team API if you want global competition.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/** -------------------------
+ * Simple Gamification Engine
+ * ------------------------- */
+const Store = {
+  key: "ds-gamify-v1",
+  load() {
+    const def = {
+      points: 0, xp: 0, level: 1,
+      streak: 0, lastLogin: null,
+      kpi: { datasets: 0, models: 0, charts: 0, quests: 0 },
+      achievements: {
+        explorer: { unlocked: false, name: "Explorer", desc: "Interact with a chart (daily)", icon: "🧭" },
+        firstPlot: { unlocked: false, name: "First Plot!", desc: "Create your first chart", icon: "📈" },
+        modelNovice: { unlocked: false, name: "Model Novice", desc: "Train your first model", icon: "🤖" },
+        streak3: { unlocked: false, name: "Consistency", desc: "3-day streak", icon: "🔥" }
+      },
+      quests: [
+        { id: "q1", title: "Create a Plot", rewardPts: 10, rewardXP: 15, done: false },
+        { id: "q2", title: "Load a Dataset", rewardPts: 5, rewardXP: 10, done: false },
+        { id: "q3", title: "Train a Model", rewardPts: 15, rewardXP: 20, done: false }
+      ],
+      flags: { explorerAwardedToday: false }
+    };
+    try {
+      return { ...def, ...JSON.parse(localStorage.getItem(this.key) || "{}") };
+    } catch { return def; }
+  },
+  save(state) { localStorage.setItem(this.key, JSON.stringify(state)); }
+};
+
+let state = Store.load();
+
+/** Utility */
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+
+function addPoints(n) {
+  state.points += n;
+  document.getElementById("points").textContent = state.points;
+  document.getElementById("me-points").textContent = state.points;
+}
+function addXP(n) {
+  state.xp += n;
+  while (state.xp >= 100) { state.xp -= 100; state.level += 1; toast(`Level Up! You are now Level ${state.level} 🎉`); }
+  updateXPUI();
+}
+function updateXPUI() {
+  document.getElementById("xp").textContent = state.xp;
+  document.getElementById("level").textContent = state.level;
+  document.getElementById("xpfill").style.width = state.xp + "%";
+}
+function tickStreak() {
+  const today = todayStr();
+  const last = state.lastLogin;
+  if (!last) state.streak = 1;
+  else {
+    const diff = Math.floor((new Date(today) - new Date(last)) / (1000*60*60*24));
+    if (diff === 1) state.streak += 1;
+    else if (diff > 1) state.streak = 1; // missed days reset
+  }
+  state.lastLogin = today;
+  document.getElementById("streak").textContent = state.streak;
+  if (state.streak >= 3 && !state.achievements.streak3.unlocked) awardAchievement("streak3");
+}
+function toast(msg) {
+  const t = document.createElement("div");
+  t.textContent = msg;
+  t.style.position = "fixed"; t.style.bottom = "20px"; t.style.right = "20px";
+  t.style.background = "linear-gradient(180deg,#26308a,#1d245f)"; t.style.border="1px solid #3a47bf";
+  t.style.padding="10px 14px"; t.style.borderRadius="10px"; t.style.zIndex=9999;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 1800);
+}
+
+function awardAchievement(key) {
+  const a = state.achievements[key];
+  if (!a || a.unlocked) return;
+  a.unlocked = true;
+  addPoints(10);
+  addXP(20);
+  toast(`Achievement Unlocked: ${a.icon} ${a.name}`);
+  renderAchievements();
+}
+
+function completeQuest(id) {
+  const q = state.quests.find(q => q.id === id);
+  if (!q || q.done) return;
+  q.done = true;
+  state.kpi.quests += 1;
+  addPoints(q.rewardPts);
+  addXP(q.rewardXP);
+  toast(`Quest Complete: ${q.title} (+${q.rewardPts} pts, +${q.rewardXP} XP)`);
+  renderQuests();
+  renderKPIs();
+}
+
+/** Renderers */
+function renderKPIs() {
+  document.getElementById("kpi-datasets").textContent = state.kpi.datasets;
+  document.getElementById("kpi-models").textContent = state.kpi.models;
+  document.getElementById("kpi-charts").textContent = state.kpi.charts;
+  document.getElementById("kpi-quests").textContent = state.kpi.quests;
+}
+function renderQuests() {
+  const host = document.getElementById("quest-list");
+  host.innerHTML = "";
+  state.quests.forEach(q => {
+    const row = document.createElement("div");
+    row.className = "quest";
+    row.innerHTML = `<div><strong>${q.title}</strong><div><small>Reward: ${q.rewardPts} pts • ${q.rewardXP} XP</small></div></div>`;
+    const btn = document.createElement("button");
+    btn.className = "btn" + (q.done ? " secondary" : "");
+    btn.textContent = q.done ? "Done" : "Complete";
+    btn.disabled = q.done;
+    btn.onclick = () => completeQuest(q.id);
+    row.appendChild(btn);
+    host.appendChild(row);
+  });
+}
+function renderAchievements() {
+  const host = document.getElementById("ach-list");
+  host.innerHTML = "";
+  Object.entries(state.achievements).forEach(([key, a]) => {
+    const row = document.createElement("div");
+    row.className = "ach" + (a.unlocked ? "" : " locked");
+    row.innerHTML = `
+      <div><strong>${a.icon} ${a.name}</strong><div><small>${a.desc}</small></div></div>
+      <span class="badge">${a.unlocked ? "Unlocked" : "Locked"}</span>`;
+    host.appendChild(row);
+  });
+}
+
+/** Chart & interactions */
+let chart;
+function initChart() {
+  const ctx = document.getElementById('accChart').getContext('2d');
+  const data = {
+    labels: [1,2,3,4,5],
+    datasets: [{ label: "Accuracy", data: [0.62,0.69,0.73,0.78,0.80], tension: 0.25 }]
+  };
+  chart = new Chart(ctx, {
+    type: 'line',
+    data,
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: "#cbd5ff" } } },
+      scales: {
+        x: { ticks: { color: "#a9b2d3" }, grid: { color: "#242a4d" } },
+        y: { min: 0.5, max: 1.0, ticks: { color: "#a9b2d3" }, grid: { color: "#242a4d" } }
+      },
+      onHover: () => awardExplorerDaily()
+    }
+  });
+}
+function addEpoch() {
+  const n = chart.data.labels.length + 1;
+  const last = chart.data.datasets[0].data.at(-1) ?? 0.6;
+  const next = clamp(last + (Math.random()*0.03 + 0.005), 0.5, 0.99);
+  chart.data.labels.push(n);
+  chart.data.datasets[0].data.push(parseFloat(next.toFixed(3)));
+  chart.update();
+  state.kpi.charts += 1;
+  addXP(2);
+  renderKPIs();
+  if (!state.achievements.firstPlot.unlocked) awardAchievement("firstPlot");
+}
+function awardExplorerDaily() {
+  const ts = todayStr();
+  if (state.flags.explorerAwardedToday === ts) return;
+  state.flags.explorerAwardedToday = ts;
+  awardAchievement("explorer");
+}
+
+/** Wiring UI */
+function bindUI() {
+  document.getElementById("btn-add-epoch").onclick = addEpoch;
+  document.getElementById("btn-load-dataset").onclick = () => {
+    state.kpi.datasets += 1; addPoints(5); renderKPIs(); completeQuest("q2");
+  };
+  document.getElementById("btn-train-model").onclick = () => {
+    state.kpi.models += 1; addPoints(10); renderKPIs(); completeQuest("q3");
+    if (!state.achievements.modelNovice.unlocked) awardAchievement("modelNovice");
+  };
+  document.getElementById("btn-complete-task").onclick = () => completeQuest("q1");
+  document.getElementById("btn-reset").onclick = () => {
+    localStorage.removeItem(Store.key); state = Store.load(); hydrate(); toast("Progress reset");
+  };
+}
+
+/** Initial hydration */
+function hydrate() {
+  updateXPUI(); renderKPIs(); renderQuests(); renderAchievements();
+  document.getElementById("points").textContent = state.points;
+  document.getElementById("me-points").textContent = state.points;
+  document.getElementById("streak").textContent = state.streak;
+}
+
+/** On load */
+window.addEventListener("load", () => {
+  // streak update happens once per day
+  const lastStreakDay = state.lastLogin;
+  const isNewDay = lastStreakDay !== todayStr();
+  if (isNewDay) tickStreak();
+
+  hydrate(); initChart(); bindUI();
+  Store.save(state);
+});
+
+// Persist on exit
+window.addEventListener("beforeunload", () => Store.save(state));
+</script>
+</body>
+</html>
